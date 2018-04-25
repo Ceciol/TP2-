@@ -2,7 +2,11 @@ import pygame
 from pygamegame import PygameGame
 from arrow import Arrow 
 from map import Map
-
+from red import * 
+from blue import * 
+from powerup import * 
+from maplib import * 
+import random 
 
 
 class Main(PygameGame):
@@ -19,6 +23,7 @@ class Main(PygameGame):
         self.bgImg = pygame.image.load('image/bg.png')
         self.setImg = pygame.image.load('image/set.png')
         self.quitImg = pygame.image.load('image/quit.png')
+        self.pauseImg = pygame.image.load('image/pause.png')
         
 #############################
 #helper 
@@ -27,7 +32,11 @@ class Main(PygameGame):
         font = pygame.font.SysFont('Arial',fontSize)
         text = font.render(txt, True, self.white)
         screen.blit(text, loc)
-
+    
+    # cited from website
+    def checkCollision(self, sprite1, sprite2):
+        return pygame.sprite.collide_rect(sprite1, sprite2)
+    
 
 #############################
 #all button
@@ -47,6 +56,7 @@ class Main(PygameGame):
         h = 50
         self.stopBtn = [500,40,w,h,self.lightGrey]
     
+    
     def btns(self):
         self.mainbuttons()
         self.gameBtn()
@@ -57,17 +67,37 @@ class Main(PygameGame):
 
     def init(self):
         self.initColor()
+        self.mapInit()
         self.initImg()
         self.mode = "main"
-        self.modeLst = ["main","settings","game","gamePause","gameOver","instructions"]
+        self.modeLst = ["main","settings","game","gamePause","gameOver","instructions","creation","multiplayer","?"]
         self.btns()
-        arrow = Arrow(self.width, self.height, self.brown)
+        arrow = Arrow(self.width, self.height)
         self.arrowGroup = pygame.sprite.GroupSingle(arrow)
-        map = Map(self.width, self.height, self.red)
-        self.mapGroup = pygame.sprite.GroupSingle(map)
+        self.mapGroup = pygame.sprite.Group()
+        self.clock = 0 
+        route = random.choice([self.p1, self.p2, self.p3]) + random.choice([self.p1, self.p2, self.p3])
+        for row in range(len(route)):
+            for col in range(len(route[row])):
+                if route[row][col] == "s":
+                    map = Map(col * 30, -row * 30, self.red)
+                    self.mapGroup.add(map)
+        self.tempGroup = pygame.sprite.Group()
         self.control = 1
         self.percentage = 5
-        
+        self.redGroup = pygame.sprite.Group()
+        # for i in range(8):
+        #     red = RedSquare(self.width, self.height, self.red)
+        #     self.redGroup.add(red)
+        self.blueGroup = pygame.sprite.Group()
+        self.build = ""
+        self.hit = {}
+        self.h = {}
+        self.powerupGroup = pygame.sprite.Group()
+        self.v = 6
+        self.score = 0
+        self.pause = False
+    
     
     #### MousePressed ####
     def mousePressed(self,x,y):
@@ -87,7 +117,13 @@ class Main(PygameGame):
         
 #### MouseReleased ####
     def mouseReleased(self,x,y):
-        pass
+        self.gameMouseReleased(x, y)
+    
+    def gameMouseReleased(self, x, y):
+        if self.mode == "game":
+            if self.within(self.stopBtn[0], self.stopBtn[1], self.stopBtn[2],\
+                self.stopBtn[3],x,y):
+                self.mode = "gamePause"
         
 #### MouseMotion ####
     def mouseMotion(self, x, y):
@@ -118,7 +154,8 @@ class Main(PygameGame):
     def mouseMotionGame(self,x,y):
         if self.mode == "game":
             if self.control == 0:
-                self.arrowGroup.mouseMove(x)
+                for arrow in self.arrowGroup:
+                    arrow.mouseMove(x)
 
 ##### KeyPressed #####
     def keyPressed(self, keyCode, modifier):
@@ -135,11 +172,158 @@ class Main(PygameGame):
 #### timerFried ####
     def timerFired(self, dt):
         if self.mode == "game":
-            for map in self.mapGroup:
-                map.createMap(dt, self.percentage)
-            if self.control == 1:
+            self.clock += dt
+            if self.clock % 100 == 0:
+                self.score += 1
+            for arrow in self.arrowGroup:
+                if arrow.c == 0 and len(self.hit) != 0:
+                    self.mode = "gameOver"
+                elif arrow.c == 1 and len(self.h) != 0:
+                    self.mode = "gameOver"
+            self.redTimerFired()
+            self.mapTimerFired()
+            self.arrowTimerFired()
+            #self.blueTimerFired(dt)
+            self.powerUpTimerFired()
+            if self.clock % 5000 == 0:
+                self.v += 1
+    
+    def redTimerFired(self):
+        self.hit.update(pygame.sprite.groupcollide(self.redGroup, self.arrowGroup, False, False))
+        if len(self.redGroup) < 3:
+            r = RedSquare(self.width, self.height, self.red)
+            b = pygame.sprite.spritecollideany(r, self.mapGroup)
+            temp = pygame.sprite.spritecollideany(r, self.tempGroup)
+            if b == None and temp == None:
+                self.redGroup.add(r)
+        for red in self.redGroup:
+            if red.rect.y > self.height + 20:
+                red.kill()
+            coll = pygame.sprite.spritecollideany(red, self.mapGroup)
+            col = pygame.sprite.spritecollideany(red, self.tempGroup)
+            if coll != None:
+                if red.rect.x > coll.rect.x: red.speedx = abs(red.speedx)
+                if red.rect.bottom > coll.rect.top: red.speedy = abs(red.speedy)
+                if red.rect.x < coll.rect.x: red.speedx = -abs(red.speedx)
+                if red.rect.bottom < coll.rect.top + 5: 
+                    red.speedy = -abs(red.speedy)
+            if col != None:
+                if red.rect.left > col.rect.left: red.speedx = abs(red.speedx)
+                if red.rect.bottom > col.rect.top: red.speedy = abs(red.speedy)
+                if red.rect.left < col.rect.left: red.speedx = -abs(red.speedx)
+                if red.rect.bottom < col.rect.top + 5: red.speedy = -abs(red.speedy)
+        self.redGroup.update()
+    
+    def blueTimerFired(self, dt):
+        self.h.update(pygame.sprite.groupcollide(self.blueGroup, self.arrowGroup, False, False))
+        if self.clock % 1 == 0:
+            num = random.randint(1,3)
+            for i in range(num):
+                b = BlueSquare(self.width, self.height, self.blue)
+                cm = pygame.sprite.spritecollideany(b, self.mapGroup)
+                ctemp = pygame.sprite.spritecollideany(b, self.tempGroup)
+                if cm == None and ctemp == None:
+                    self.blueGroup.add(b)
+            for blue in self.blueGroup:
+                if blue.rect.y > self.height + 20:
+                    blue.kill()
+                collide = pygame.sprite.spritecollideany(blue, self.arrowGroup)
+                if collide != None:
+                    if blue.rect.x > collide.rect.x: 
+                        blue.right = True
+                    if blue.rect.bottom > collide.rect.top:
+                        blue.up = True
+                    if blue.rect.x < collide.rect.x:
+                        blue.left = True 
+                    if blue.rect.bottom < collide.rect.top + 5:
+                        blue.down = True
+        self.blueGroup.update()
+            
+    def powerUpTimerFired(self):
+        self.powerupGroup.update(self.v)
+        if self.clock % 10 == 0:
+            p = PowerUp(self.width, self.height)
+            mapC = pygame.sprite.spritecollideany(p, self.mapGroup)
+            tempC = pygame.sprite.spritecollideany(p, self.tempGroup)
+            if mapC == None and tempC == None:
+                self.powerupGroup.add(p)
+                
+        hits = pygame.sprite.groupcollide(self.powerupGroup, self.arrowGroup, True, False)
+        for hit in hits:
+            if hit.type == "slow":
+                for map in self.mapGroup:
+                    map.slowspeed()
+                for map in self.tempGroup:
+                    map.slowspeed()
+                for powerup in self.powerupGroup:
+                    powerup.slowspeed()
+            if hit.type == "color":
                 for arrow in self.arrowGroup:
-                    arrow.keyMove(dt, self.isKeyPressed)
+                    arrow.changeColor()
+            if hit.type == "goldCoin":
+                self.score += 10
+    
+    def arrowTimerFired(self):
+        self.arrowGroup.update(self.isKeyPressed)
+        
+    def mapTimerFired(self):
+        self.mapGroup.update(self.v)
+        self.tempGroup.update(self.v)
+        if len(self.mapGroup) != 0:
+            self.hit.update(pygame.sprite.groupcollide(self.mapGroup, self.arrowGroup, False, False))
+            count = 0 
+            for map in self.mapGroup:
+                if map.rect.y > 0: 
+                    count += 1
+                if map.rect.y > self.height + 30: 
+                    self.mapGroup.remove(map)
+                if count == len(self.mapGroup): 
+                    self.build = "temp"
+            
+        if len(self.tempGroup) != 0:
+            self.hit.update(pygame.sprite.groupcollide(self.tempGroup, self.arrowGroup, False, False))
+            count1 = 0 
+            for m in self.tempGroup:
+                if m.rect.y > 0: count1 += 1
+                if m.rect.y > self.height + 30: self.tempGroup.remove(m)
+                if count1 == len(self.tempGroup): 
+                    self.build = "new"
+
+        
+        if self.build == "new" and len(self.mapGroup) == 0:
+            route1 = random.choice([self.p1, self.p2, self.p3]) + random.choice([self.p1, self.p2, self.p3])
+            for row in range(len(route1)):
+                for col in range(len(route1[row])):
+                    if route1[row][col] == "s":
+                        map = Map(col * 30, -row * 30, self.red)
+                        self.mapGroup.add(map)
+
+                    
+        if self.build == "temp" and len(self.tempGroup) == 0:
+            route2 = random.choice([self.p1, self.p2, self.p3]) + random.choice([self.p1, self.p2, self.p3])
+            for row in range(len(route2)):
+                for col in range(len(route2[row])):
+                    if route2[row][col] == "s":
+                        map = Map(col * 30, -row * 30, self.red)
+                        self.tempGroup.add(map)
+
+            # while len(self.mapGroup) < 200:
+            #     route = random.choice([self.p1, self.p2, self.p3]) + random.choice([self.p1, self.p2, self.p3])
+            #     for row in range(len(route)):
+            #         for col in range(len(route[row])):
+            #             if route[row][col] == "s":
+            #                 map = Map(col * 30, -row * 30, self.red)
+            #                 self.mapGroup = pygame.sprite.Group.add(map)
+                    
+        #     if self.control == 1:
+        #         for arrow in self.arrowGroup:
+        #             arrow.keyMove(dt, self.isKeyPressed)
+        # #blue = BlueSquare(self.width, self.height, self.blue)
+        #     if pygame.sprite.spritecollideany(red, self.mapGroup) == False:
+            
+        #     #if self.checkCollision(map, blue) == False:
+        #         #self.blueGroup.append(blue)
+            
         
 ###########################
 #draw
@@ -153,7 +337,7 @@ class Main(PygameGame):
         screen.blit(self.quitImg, (self.quitBtn[0],self.quitBtn[1]))
     
     def drawStopBtn(self,screen):
-        pass
+        pygame.draw.rect(screen, self.stopBtn[4], self.stopBtn[:4])
 
     # cited from pygame website
     def AAfilledRoundedRect(surface,rect,color,radius=0.4):
@@ -213,22 +397,40 @@ class Main(PygameGame):
     def redrawGame(self,screen):
         if self.mode == "game":
             screen.fill(self.white)
-            for arrow in self.arrowGroup:
-                arrow.draw(screen)
-            for map in self.mapGroup:
-                map.draw(screen)
-            
+            self.arrowGroup.draw(screen)
+            self.redGroup.draw(screen)
+            self.blueGroup.draw(screen)
+            self.powerupGroup.draw(screen)
+            if len(self.mapGroup) != 0:
+                self.mapGroup.draw(screen)
+            if len(self.tempGroup) != 0:
+                self.tempGroup.draw(screen)
+            self.displayText(screen, 30, str(self.score), (20,20))
+            self.drawStopBtn(screen)
+
     
     def redrawGamePause(self,screen):
         if self.mode == "gamePause":
-            pass
+            screen.fill(self.white)
     
     def redrawGameOver(self,screen):
         if self.mode == "gameOver":
-            pass
+            screen.fill(self.white)
     
     def redrawInstructions(self,screen):
         if self.mode == "instructions":
+            pass
+        
+    def redrawMultiplayer(self,screen):
+        if self.mode == "multiplayer":
+            pass
+    
+    def redrawCreation(self, screen):
+        if self.mode == "creation":
+            pass
+            
+    def redrawQuestion(self,screen):
+        if self.mode == "?":
             pass
         
     def redrawAll(self, screen):
@@ -238,5 +440,9 @@ class Main(PygameGame):
         self.redrawGamePause(screen)
         self.redrawGameOver(screen)
         self.redrawInstructions(screen)
+        self.redrawMultiplayer(screen)
+        self.redrawCreation(screen)
+        self.redrawQuestion(screen)
+
 
 Main(600, 600).run()
